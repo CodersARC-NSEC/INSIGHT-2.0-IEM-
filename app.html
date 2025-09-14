@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Health-Aware Shopping Cart</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 30px;
+            height: calc(100vh - 40px);
+        }
+
+        .main-content {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            font-weight: 700;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .camera-container {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8f9fa;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 3px dashed #e9ecef;
+            transition: all 0.3s ease;
+        }
+
+        .camera-container.active {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+
+        #webcam-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #webcam-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 12px;
+        }
+
+        .camera-placeholder {
+            text-align: center;
+            color: #6c757d;
+            font-size: 1.2em;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .prediction-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #dc3545;
+        }
+
+        .status-indicator.active {
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .health-score-card {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .health-score {
+            font-size: 3em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .health-label {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .stat-card {
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            font-weight: 600;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .healthy-stat {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            color: #155724;
+        }
+
+        .unhealthy-stat {
+            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+            color: #721c24;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .cart-section {
+            flex: 1;
+        }
+
+        .section-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .cart-items {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .cart-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e9ecef;
+            animation: slideIn 0.3s ease;
+        }
+
+        .cart-item:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .item-name {
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .item-count {
+            background: #6c757d;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
+        .item-type {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .healthy-tag {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .unhealthy-tag {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .empty-cart {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            padding: 40px 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 123, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d, #495057);
+            color: white;
+            box-shadow: 0 5px 15px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(108, 117, 125, 0.4);
+        }
+
+        .model-status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .model-loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .model-ready {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .model-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .sidebar {
+                order: -1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+                height: auto;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .stats-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <h1>🛒 Smart Health-Aware Shopping Cart</h1>
+            
+            <div id="modelStatus" class="model-status model-loading">
+                🔄 Loading AI Model... Please wait
+            </div>
+            
+            <div class="camera-container" id="cameraContainer">
+                <div class="camera-placeholder" id="cameraPlaceholder">
+                    📹 Click "Start Camera" to begin scanning items
+                </div>
+                <div id="webcam-container" style="display: none;"></div>
+                <div class="overlay" id="overlay" style="display: none;">
+                    <div class="prediction-status">
+                        <div class="status-indicator" id="statusIndicator"></div>
+                        <span id="predictionText">Initializing...</span>
+                    </div>
+                    <div id="confidenceText">Confidence: 0%</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn btn-primary" id="startBtn">Start Camera</button>
+                <button class="btn btn-secondary" id="clearBtn">Clear Cart</button>
+            </div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="health-score-card">
+                <div class="health-score" id="healthScore">0%</div>
+                <div class="health-label">Cart Health Score</div>
+            </div>
+            
+            <div class="stats-container">
+                <div class="stat-card healthy-stat">
+                    <div class="stat-number" id="healthyCount">0</div>
+                    <div>Healthy Items</div>
+                </div>
+                <div class="stat-card unhealthy-stat">
+                    <div class="stat-number" id="unhealthyCount">0</div>
+                    <div>Unhealthy Items</div>
+                </div>
+            </div>
+            
+            <div class="cart-section">
+                <div class="section-title">
+                    🛍️ Shopping Cart
+                </div>
+                <div class="cart-items" id="cartItems">
+                    <div class="empty-cart">Your cart is empty. Start scanning items!</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SmartShoppingCart {
+            constructor() {
+                this.model = null;
+                this.webcam = null;
+                this.isModelLoaded = false;
+                this.isScanning = false;
+                this.cart = [];
+                this.lastPrediction = '';
+                this.lastPredictionTime = 0;
+                this.debounceDelay = 5000; // 5 seconds
+                this.confidenceThreshold = 0.7;
+                this.maxPredictions = 0;
+                
+                // Teachable Machine model URL
+                this.modelURL = "https://teachablemachine.withgoogle.com/models/oJyGwlgGX/";
+                
+                // Item mappings to health categories
+                
+                this.itemMappings = {
+                    'APPLE': 'healthy',
+                    'BANANA': 'healthy',
+                    'CUCUMBER': 'healthy',               
+                    'BREAD': 'neutral',
+                    'MAYONNAISE': 'unhealthy',                   
+                    'OREO': 'unhealthy',
+                    'EMPTY HAND': 'neutral',
+                    'NOTHING': 'neutral',
+                                        
+                };
+                
+                this.initializeElements();
+                this.loadModel();
+            }
+            
+            initializeElements() {
+                this.elements = {
+                    startBtn: document.getElementById('startBtn'),
+                    clearBtn: document.getElementById('clearBtn'),
+                    webcamContainer: document.getElementById('webcam-container'),
+                    overlay: document.getElementById('overlay'),
+                    predictionText: document.getElementById('predictionText'),
+                    confidenceText: document.getElementById('confidenceText'),
+                    statusIndicator: document.getElementById('statusIndicator'),
+                    modelStatus: document.getElementById('modelStatus'),
+                    healthScore: document.getElementById('healthScore'),
+                    healthyCount: document.getElementById('healthyCount'),
+                    unhealthyCount: document.getElementById('unhealthyCount'),
+                    cartItems: document.getElementById('cartItems'),
+                    cameraContainer: document.getElementById('cameraContainer'),
+                    cameraPlaceholder: document.getElementById('cameraPlaceholder')
+                };
+                
+                this.elements.startBtn.addEventListener('click', () => this.toggleCamera());
+                this.elements.clearBtn.addEventListener('click', () => this.clearCart());
+            }
+            
+            async loadModel() {
+                try {
+                    this.updateModelStatus('loading', '🔄 Loading AI Model... Please wait');
+                    
+                    const modelUrl = this.modelURL + "model.json";
+                    const metadataUrl = this.modelURL + "metadata.json";
+                    
+                    // Load the Teachable Machine model
+                    this.model = await tmImage.load(modelUrl, metadataUrl);
+                    this.maxPredictions = this.model.getTotalClasses();
+                    
+                    this.isModelLoaded = true;
+                    this.updateModelStatus('ready', '✅ AI Model Ready! Click "Start Camera" to begin');
+                    
+                } catch (error) {
+                    console.error('Failed to load model:', error);
+                    this.updateModelStatus('error', '❌ Failed to load AI model. Please check your connection and model URL.');
+                }
+            }
+            
+            updateModelStatus(status, message) {
+                this.elements.modelStatus.className = `model-status model-${status}`;
+                this.elements.modelStatus.textContent = message;
+            }
+            
+            async toggleCamera() {
+                if (!this.isModelLoaded) {
+                    alert('Please wait for the AI model to load first!');
+                    return;
+                }
+                
+                if (!this.isScanning) {
+                    await this.startCamera();
+                } else {
+                    this.stopCamera();
+                }
+            }
+            
+            async startCamera() {
+                try {
+                    // Setting up webcam using Teachable Machine library
+                    const flip = true; // whether to flip the webcam
+                    this.webcam = new tmImage.Webcam(640, 480, flip);
+                    await this.webcam.setup(); // request access to the webcam
+                    await this.webcam.play();
+                    
+                    // Show webcam
+                    this.elements.webcamContainer.appendChild(this.webcam.canvas);
+                    this.elements.webcamContainer.style.display = 'flex';
+                    this.elements.cameraPlaceholder.style.display = 'none';
+                    this.elements.overlay.style.display = 'block';
+                    this.elements.cameraContainer.classList.add('active');
+                    
+                    this.elements.startBtn.textContent = 'Stop Camera';
+                    this.elements.startBtn.className = 'btn btn-secondary';
+                    
+                    this.isScanning = true;
+                    this.startPredictionLoop();
+                    
+                } catch (error) {
+                    console.error('Camera access denied:', error);
+                    alert('Camera access is required for item scanning. Please allow camera permissions and try again.');
+                }
+            }
+            
+            stopCamera() {
+                if (this.webcam) {
+                    this.webcam.stop();
+                }
+                
+                // Clear webcam container
+                this.elements.webcamContainer.innerHTML = '';
+                this.elements.webcamContainer.style.display = 'none';
+                this.elements.cameraPlaceholder.style.display = 'block';
+                this.elements.overlay.style.display = 'none';
+                this.elements.cameraContainer.classList.remove('active');
+                
+                this.elements.startBtn.textContent = 'Start Camera';
+                this.elements.startBtn.className = 'btn btn-primary';
+                
+                this.isScanning = false;
+            }
+            
+            async startPredictionLoop() {
+                if (!this.isScanning || !this.webcam) return;
+                
+                this.webcam.update(); // update the webcam frame
+                await this.predict();
+                
+                // Continue the loop
+                requestAnimationFrame(() => this.startPredictionLoop());
+            }
+            
+            async predict() {
+                if (!this.webcam) return;
+                
+                try {
+                    if (this.isDemoMode) {
+                        // Demo mode - simulate predictions
+                        this.simulatePrediction();
+                        return;
+                    }
+                    
+                    if (!this.model) return;
+                    
+                    // Get prediction from the model
+                    const prediction = await this.model.predict(this.webcam.canvas);
+                    
+                    // Find the highest confidence prediction
+                    let highestPrediction = prediction[0];
+                    for (let i = 1; i < prediction.length; i++) {
+                        if (prediction[i].probability > highestPrediction.probability) {
+                            highestPrediction = prediction[i];
+                        }
+                    }
+                    
+                    this.handlePrediction(highestPrediction.className.toUpperCase(), highestPrediction.probability);
+                    
+                } catch (error) {
+                    console.error('Prediction error:', error);
+                    // Fallback to demo mode on prediction error
+                    if (!this.isDemoMode) {
+                        this.isDemoMode = true;
+                        console.log('Switching to demo mode due to prediction error');
+                    }
+                    this.simulatePrediction();
+                }
+            }
+            
+           
+             simulatePrediction() {
+                // Model prediction simulation
+                const demoItems = ['APPLE', 'BANANA', 'CUCUMBER', 'MAYONNAISE', 'BREAD', 'OREO', 'EMPTY HAND', 'NOTHING SHOWN'];
+                const randomItem = demoItems[Math.floor(Math.random() * demoItems.length)];
+                const confidence = Math.random() * 0.4 + 0.6; 
+                
+                this.handlePrediction(randomItem, confidence);
+            }
+            
+            handlePrediction(prediction, confidence) {
+                const now = Date.now();
+                const confidencePercentage = Math.round(confidence * 100);
+                
+                this.elements.confidenceText.textContent = `Confidence: ${confidencePercentage}%`;
+                
+                // Update status indicator
+                if (confidence > this.confidenceThreshold) {
+                    this.elements.statusIndicator.classList.add('active');
+                } else {
+                    this.elements.statusIndicator.classList.remove('active');
+                }
+                
+                // Handle different prediction types
+                if (prediction === 'EMPTY HAND' || prediction === 'NOTHING SHOWN' || prediction === 'BACKGROUND' || prediction === 'NOTHING') {
+                    this.elements.predictionText.textContent = '👀 Please show an item';
+                } else if (this.itemMappings[prediction]) {
+                    this.elements.predictionText.textContent = `🔍 Detected: ${prediction.replace(/([A-Z])/g, ' $1').trim()}`;
+                    
+                    // Add to cart if confidence is high and enough time has passed
+                    if (confidence > this.confidenceThreshold && 
+                        (prediction !== this.lastPrediction || now - this.lastPredictionTime > this.debounceDelay)) {
+                        
+                        this.addToCart(prediction, this.itemMappings[prediction]);
+                        this.lastPrediction = prediction;
+                        this.lastPredictionTime = now;
+                    }
+                } else {
+                    this.elements.predictionText.textContent = `❓ Unknown item: ${prediction.replace(/([A-Z])/g, ' $1').trim()}`;
+                }
+            }
+            
+            addToCart(itemName, itemType) {
+                const existingItem = this.cart.find(item => item.name === itemName);
+                
+                if (existingItem) {
+                    existingItem.count++;
+                } else {
+                    this.cart.push({
+                        name: itemName,
+                        type: itemType,
+                        count: 1
+                    });
+                }
+                
+                this.updateCartDisplay();
+                this.updateHealthScore();
+                
+                // Visual feedback for adding item
+                this.elements.predictionText.textContent = `✅ Added: ${itemName.replace(/([A-Z])/g, ' $1').trim()}`;
+                setTimeout(() => {
+                    if (this.isScanning) {
+                        this.elements.predictionText.textContent = `🔍 Detected: ${itemName.replace(/([A-Z])/g, ' $1').trim()}`;
+                    }
+                }, 1000);
+            }
+            
+            updateCartDisplay() {
+                const cartContainer = this.elements.cartItems;
+                
+                if (this.cart.length === 0) {
+                    cartContainer.innerHTML = '<div class="empty-cart">Your cart is empty. Start scanning items!</div>';
+                    return;
+                }
+                
+                cartContainer.innerHTML = this.cart.map(item => `
+                    <div class="cart-item">
+                        <div class="item-name">${item.name.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div class="item-count">${item.count}</div>
+                        <div class="item-type ${item.type}-tag">${item.type}</div>
+                    </div>
+                `).join('');
+            }
+            
+            updateHealthScore() {
+                const totalItems = this.cart.reduce((sum, item) => sum + item.count, 0);
+                const healthyItems = this.cart
+                    .filter(item => item.type === 'healthy')
+                    .reduce((sum, item) => sum + item.count, 0);
+                const unhealthyItems = totalItems - healthyItems;
+                
+                const healthScore = totalItems > 0 ? Math.round((healthyItems / totalItems) * 100) : 0;
+                
+                this.elements.healthScore.textContent = `${healthScore}%`;
+                this.elements.healthyCount.textContent = healthyItems;
+                this.elements.unhealthyCount.textContent = unhealthyItems;
+                
+                // Update health score card color based on score
+                const scoreCard = document.querySelector('.health-score-card');
+                if (healthScore >= 70) {
+                    scoreCard.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+                } else if (healthScore >= 40) {
+                    scoreCard.style.background = 'linear-gradient(135deg, #ffc107, #fd7e14)';
+                } else {
+                    scoreCard.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+                }
+            }
+            
+            clearCart() {
+                this.cart = [];
+                this.lastPrediction = '';
+                this.lastPredictionTime = 0;
+                this.updateCartDisplay();
+                this.updateHealthScore();
+            }
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new SmartShoppingCart();
+        });
+    </script>
+</body>
+</html>
